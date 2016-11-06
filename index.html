@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+    <style>
+        
+    svg {
+        font: 10px sans-serif;
+    }
+    
+    .caption {
+        font-weight: bold;
+    }
+    
+    .key path {
+        display: none;
+    }
+        
+    .key line {
+        stroke: #000;
+        shape-rendering: crispEdges;
+    }
+        
+    .county-border {
+        fill: none;
+        stroke: #000;
+        stroke-opacity: .3;
+    }
+    
+    .state-border {
+        fill: none;
+        stroke: #000;
+        stroke-opacity: .7;
+    }
+
+    </style>
+    <body>
+    
+    <h1>Indiana Population Density 2014</h1>
+    <!--Buttons for toggling boundery and color-->
+    <div id="buttons">
+        <button id="colorB" onclick="updateColor()">Toggle Color</button>
+        <button id="stateB" onclick="updateState()">Toggle State Boundery</button>
+        <button id="tractB" onclick="updateTract()">Toggle Census Tract Boundery</button>
+    </div>
+    <script src="//d3js.org/d3.v3.min.js"></script>
+    <script src="//d3js.org/topojson.v1.min.js"></script>
+    <script>
+    
+    var width = 960,
+        height = 800;
+    
+    var formatNumber = d3.format(",d");
+    
+    var projection = d3.geo.mercator()
+        .scale(7800)
+        .translate([width+11300, height+5550]);   
+    
+    var path = d3.geo.path()
+        .projection(projection);
+    
+    var color = d3.scale.threshold()
+        .domain([1, 10, 50, 100, 500, 1000, 2000, 5000])
+        .range(["#fff7ec", "#fee8c8", "#fdd49e", "#fdbb84", "#fc8d59", "#ef6548", "#d7301f", "#b30000", "#7f0000"]);
+    
+    // A position encoding for the key only.
+    var x = d3.scale.linear()
+        .domain([0, 5100])
+        .range([0, 480]);
+    
+    var xAxis = d3.svg.axis()
+        .scale(x)
+        .orient("bottom")
+        .tickSize(13)
+        .tickValues(color.domain())
+        .tickFormat(function(d) { return d >= 100 ? formatNumber(d) : null; });
+    
+    var svg = d3.select("body").append("svg")
+        .attr("width", width)
+        .attr("height", height);
+    
+    var g = svg.append("g")
+        .attr("class", "key")
+        .attr("transform", "translate(280,40)");
+    
+    // create rect color for the axis/legend
+    g.selectAll("rect")
+        .data(color.range().map(function(d, i) {
+            return {
+                x0: i ? x(color.domain()[i - 1]) : x.range()[0],
+                x1: i < color.domain().length ? x(color.domain()[i]) : x.range()[1],
+                z: d
+            };
+        }))
+        .enter().append("rect")
+            .attr("height", 8)
+            .attr("x", function(d) { return d.x0; })
+            .attr("width", function(d) { return d.x1 - d.x0; })
+            .style("fill", function(d) { return d.z; });
+        
+    //grab rect elements
+    var axisRect = g.selectAll("rect");
+    
+    // add text to axis
+    g.call(xAxis).append("text")
+        .attr("class", "caption")
+        .attr("y", -6)
+        .text("Population per square mile");
+        
+    // Read in json file and create state
+    d3.json("in.json", function(error, ind) {
+        if (error) throw error;
+        //console.log(ind);
+        var tracts = topojson.feature(ind, ind.objects.tracts);
+        
+        // Clip tracts to land.
+        svg.append("defs").append("clipPath")
+            .attr("id", "clip-land")
+            .append("path")
+                .datum(topojson.feature(ind, ind.objects.counties))
+                .attr("d", path);
+        
+        // Group tracts by color for faster rendering.
+        svg.append("g")
+            .attr("class", "tract")
+            .attr("clip-path", "url(#clip-land)")
+            .selectAll("path")
+            .data(d3.nest()
+                .key(function(d) { return color(d.properties.population / d.properties.area * 2.58999e6); })
+                .entries(tracts.features.filter(function(d) { return d.properties.area; })))
+            .enter().append("path")
+                .style("fill", function(d) { return d.key; })
+                .attr("d", function(d) { return path({type: "FeatureCollection", features: d.values}); });
+        
+        // Draw county borders.
+        svg.append("path")
+            .datum(topojson.mesh(ind, ind.objects.counties, function(a, b) { return a !== b; }))
+            .attr("class", "county-border")
+            .attr("d", path);
+    });
+    
+    // create booleans to toggle color/bounderies
+    var togglecolor = true;
+    var toggleState = false;
+    var toggleTract = false;
+    
+    // Function to change color range
+    function updateColor() {
+        if(togglecolor){
+            togglecolor = false;
+            color.range(["#f7fbff", "#deebf7", "#c6dbef", "#9ecae1", "#6baed6", "#4292c6", "#2171b5", "#084594", "#08306b"]);
+            update();
+        }else{
+            togglecolor = true;
+            color.range(["#fff7ec", "#fee8c8", "#fdd49e", "#fdbb84", "#fc8d59", "#ef6548", "#d7301f", "#b30000", "#7f0000"]);
+            update();
+        }
+    }
+    
+    // Function to add/remove state lines
+    function updateState() {
+        if(toggleState){
+            toggleState = false;
+            update();
+        }else{
+            toggleState = true;
+            update();
+        }
+    }
+    
+    // Function to add/remove tract lines
+    function updateTract() {
+        if(toggleTract){
+            toggleTract = false;
+            update();
+        }else{
+            toggleTract = true;
+            update();
+        }
+    }
+    
+    // Create new visual
+    function update() {
+        
+        // Update the axis/legend rectangle colors
+        g.selectAll("rect")
+            .data(color.range().map(function(d, i) {
+                return {
+                    x0: i ? x(color.domain()[i - 1]) : x.range()[0],
+                    x1: i < color.domain().length ? x(color.domain()[i]) : x.range()[1],
+                    z: d
+                };
+            }))
+            .style("fill", function(d) { return d.z; });
+        
+        // Read in fron json file again to make state
+        d3.json("in.json", function(error, ind) {
+            if (error) throw error;
+            
+            // Remove old borders
+            svg.select(".county-border").remove();
+            svg.select(".state-border").remove();
+            
+            var tracts = topojson.feature(ind, ind.objects.tracts);
+            
+            // Clip tracts to land.
+            svg.append("defs").append("clipPath")
+                .attr("id", "clip-land")
+                .append("path")
+                    .datum(topojson.feature(ind, ind.objects.counties))
+                    .attr("d", path);
+            
+            // Group tracts by color for faster rendering.
+            svg.append("g")
+                .attr("class", "tract")
+                .attr("clip-path", "url(#clip-land)")
+                .selectAll("path")
+                .data(d3.nest()
+                    .key(function(d) { return color(d.properties.population / d.properties.area * 2.58999e6); })
+                    .entries(tracts.features.filter(function(d) { return d.properties.area; })))
+                .enter().append("path")
+                    .style("fill", function(d) { return d.key; })
+                    .attr("d", function(d) { return path({type: "FeatureCollection", features: d.values}); });
+            
+            if(toggleTract){
+                // Draw tract borders.
+                svg.append("path")
+                    .datum(topojson.mesh(ind, ind.objects.tracts, function(a, b) { return a !== b; }))
+                    .attr("class", "county-border")
+                    .attr("d", path);
+            }else{
+                // Draw county borders.
+                svg.append("path")
+                    .datum(topojson.mesh(ind, ind.objects.counties, function(a, b) { return a !== b; }))
+                    .attr("class", "county-border")
+                    .attr("d", path);
+            }
+            
+            if(toggleState){
+                // Draw state borders.
+                svg.append("path")
+                    .datum(topojson.mesh(ind, ind.objects.counties, function(a, b) { return a === b; }))
+                    .attr("class", "state-border")
+                    .attr("d", path);
+            }
+            
+        });
+    }
+    
+    d3.select(self.frameElement).style("height", height + "px");
+
+    </script>
+    
+    <h4>
+    Curtis Lee<br/>
+    Instructor: Suresh Lodha<br/>
+    CMPS 165: Data Programming for Visualization<br/>
+    Fall 2016
+    </h4>
+    
+    </body>
+</html>
